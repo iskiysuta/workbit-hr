@@ -1,0 +1,237 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model EmployeeLoanPayment {
+  id              Int           @id @default(autoincrement())
+  employeeLoanId  Int
+  payrollPeriodId Int
+  amount          Int
+  createdAt       DateTime      @default(now())
+
+  loan           EmployeeLoan  @relation(fields: [employeeLoanId], references: [id])
+  payrollPeriod  PayrollPeriod @relation(fields: [payrollPeriodId], references: [id])
+
+  @@index([employeeLoanId])
+  @@index([payrollPeriodId])
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now())
+}
+
+model Employee {
+  id             Int      @id @default(autoincrement())
+  companyId      String   // ID Perusahaan
+  name           String
+  phone          String   // No HP
+  email          String   @unique
+  password       String   // Password untuk login android nanti (disimpan ter-enkripsi)
+  joinedAt       DateTime // Tanggal bergabung
+  position       String   // Jabatan
+  level          String   // Level jabatan
+  address        String   // Alamat
+  bankName       String   // Nama bank
+  bankAccount    String   // No rekening
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  jobId          Int?
+  job            Job?     @relation(fields: [jobId], references: [id])
+
+  schedules              Schedule[]
+  loans                  EmployeeLoan[]
+  payrollItems           PayrollItem[]
+  leaveRequests          LeaveRequest[]
+  shiftSwapRequestsSent  ShiftSwapRequest[] @relation("ShiftSwapRequester")
+  shiftSwapRequestsRecvd ShiftSwapRequest[] @relation("ShiftSwapTarget")
+}
+
+model Job {
+  id          Int        @id @default(autoincrement())
+  level       String
+  title       String
+  totalSalary Int
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  employees   Employee[]
+
+  isFullSalaryPayroll Boolean @default(false)
+}
+
+model Shift {
+  id                 Int         @id @default(autoincrement())
+  name               String
+  startTime          String      // format HH:mm
+  endTime            String      // format HH:mm
+  gracePeriodMinutes Int
+  isDayOff           Boolean     @default(false) // <--- TAMBAH BARIS INI
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  schedules          Schedule[]
+  leaveRequests      LeaveRequest[]
+}
+
+model Schedule {
+  id         Int       @id @default(autoincrement())
+  employeeId Int
+  date       DateTime  // Tanggal (tanpa jam, diset ke 00:00)
+  shiftId    Int
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  employee   Employee  @relation(fields: [employeeId], references: [id])
+  shift      Shift     @relation(fields: [shiftId], references: [id])
+  attendance Attendance?
+
+  @@unique([employeeId, date])
+}
+
+model Attendance {
+  id         Int       @id @default(autoincrement())
+  scheduleId Int       @unique
+  timeIn     DateTime?
+  timeOut    DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  schedule   Schedule  @relation(fields: [scheduleId], references: [id])
+}
+
+model EmployeeLoan {
+  id               Int      @id @default(autoincrement())
+  employeeId       Int
+  loanDate         DateTime // Tanggal peminjaman
+  amount           Int      // Total jumlah pinjaman (pokok)
+  months           Int      // Dibayar berapa kali (bulan)
+  installment      Int      // Jumlah cicilan per bulan
+  description      String?  // Keterangan tambahan (opsional)
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  paidMonths       Int      @default(0) // Berapa bulan cicilan sudah dibayar
+
+  employee         Employee @relation(fields: [employeeId], references: [id])
+  payments         EmployeeLoanPayment[]
+
+  @@index([employeeId])
+}
+
+model PayrollPeriod {
+  id          Int           @id @default(autoincrement())
+  year        Int
+  month       Int
+  periodStart DateTime
+  periodEnd   DateTime
+  createdAt   DateTime      @default(now())
+
+  items       PayrollItem[]
+  loanPayments EmployeeLoanPayment[]
+
+  @@unique([year, month])
+}
+
+model PayrollItem {
+  id               Int           @id @default(autoincrement())
+  payrollPeriodId  Int
+  employeeId       Int
+
+  totalSalary      Int
+  isFullSalaryPayroll Boolean
+
+  scheduledWorkingDays Int
+  workingDays         Int
+  offDays             Int
+  absentDays          Int
+  lateCount           Int
+  totalLateMinutes    Int
+  totalWorkMinutes    Int
+
+  loanInstallment     Int
+
+  baseSalary          Int
+  positionAllowance   Int
+  transportAllowance  Int
+  mealAllowance       Int
+  healthAllowance     Int
+
+  grossBeforePenalty  Int
+  latePenalty         Int
+
+  extraDeduction      Int
+  extraAddition       Int
+  thp                 Int
+
+  createdAt           DateTime      @default(now())
+
+  employee            Employee      @relation(fields: [employeeId], references: [id])
+  payrollPeriod       PayrollPeriod @relation(fields: [payrollPeriodId], references: [id])
+
+  @@index([employeeId])
+}
+
+model AttendanceLocationSetting {
+  id           Int      @id @default(1)
+  lat          Float
+  lng          Float
+  radiusMeters Int
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model LeaveRequest {
+  id         Int           @id @default(autoincrement())
+  employeeId Int
+  date       DateTime
+  shiftId    Int
+  reason     String?
+  status     RequestStatus @default(PENDING)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  approvedAt DateTime?
+
+  employee   Employee      @relation(fields: [employeeId], references: [id])
+  shift      Shift         @relation(fields: [shiftId], references: [id])
+
+  @@index([employeeId, date])
+}
+
+model ShiftSwapRequest {
+  id          Int           @id @default(autoincrement())
+  requesterId Int
+  targetId    Int
+  date        DateTime
+  status      RequestStatus @default(PENDING)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  approvedAt  DateTime?
+
+  requester   Employee      @relation("ShiftSwapRequester", fields: [requesterId], references: [id])
+  target      Employee      @relation("ShiftSwapTarget", fields: [targetId], references: [id])
+
+  @@index([requesterId, date])
+  @@index([targetId, date])
+}
