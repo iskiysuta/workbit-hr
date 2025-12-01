@@ -8,15 +8,9 @@ export default function Home() {
           HR App
         </h1>
         <p className="text-center text-zinc-600">
-          Silakan pilih aksi:
+          Silakan login untuk masuk ke dashboard HR.
         </p>
         <div className="space-y-3">
-          <Link
-            href="/register"
-            className="block w-full text-center rounded-full bg-primary px-4 py-2 text-white font-semibold shadow hover:bg-primary/90 transition-colors"
-          >
-            Register
-          </Link>
           <Link
             href="/login"
             className="block w-full text-center rounded-full border border-primary px-4 py-2 text-primary hover:bg-primary/5 transition-colors"
