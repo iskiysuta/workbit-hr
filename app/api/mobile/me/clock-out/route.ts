@@ -29,8 +29,16 @@ export async function POST(request: NextRequest) {
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
 
-    const schedule = await prisma.schedule.findFirst({
+    function isOvernightShift(shift: { startTime: string | null; endTime: string | null }) {
+      if (!shift?.startTime || !shift?.endTime) return false;
+      // format HH:mm, jadi perbandingan string sudah cukup
+      return shift.endTime <= shift.startTime;
+    }
+
+    const scheduleToday = await prisma.schedule.findFirst({
       where: {
         employeeId: payload.employeeId,
         date: {
@@ -44,21 +52,56 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    if (!schedule) {
+    let targetSchedule = scheduleToday;
+
+    const canClockOutToday =
+      scheduleToday &&
+      scheduleToday.attendance &&
+      scheduleToday.attendance.timeIn &&
+      !scheduleToday.attendance.timeOut;
+
+    if (!canClockOutToday) {
+      const scheduleYesterday = await prisma.schedule.findFirst({
+        where: {
+          employeeId: payload.employeeId,
+          date: {
+            gte: yesterday,
+            lt: today,
+          },
+        },
+        include: {
+          shift: true,
+          attendance: true,
+        },
+      });
+
+      if (
+        scheduleYesterday &&
+        !scheduleYesterday.shift.isDayOff &&
+        scheduleYesterday.attendance &&
+        scheduleYesterday.attendance.timeIn &&
+        !scheduleYesterday.attendance.timeOut &&
+        isOvernightShift(scheduleYesterday.shift)
+      ) {
+        targetSchedule = scheduleYesterday;
+      }
+    }
+
+    if (!targetSchedule) {
       return NextResponse.json(
         { message: "Tidak ada jadwal untuk hari ini" },
         { status: 404 }
       );
     }
 
-    if (!schedule.attendance || !schedule.attendance.timeIn) {
+    if (!targetSchedule.attendance || !targetSchedule.attendance.timeIn) {
       return NextResponse.json(
         { message: "Anda belum absen masuk" },
         { status: 400 }
       );
     }
 
-    if (schedule.attendance.timeOut) {
+    if (targetSchedule.attendance.timeOut) {
       return NextResponse.json(
         { message: "Anda sudah absen keluar" },
         { status: 400 }
@@ -66,7 +109,7 @@ export async function POST(request: NextRequest) {
     }
 
     const attendance = await prisma.attendance.update({
-      where: { scheduleId: schedule.id },
+      where: { scheduleId: targetSchedule.id },
       data: {
         timeOut: now,
       },

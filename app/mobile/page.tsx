@@ -80,8 +80,57 @@ export default function MobileHomePage() {
           }
         }) ?? null;
 
+      // Cari jadwal kemarin yang overnight dan masih terbuka (sudah timeIn, belum timeOut)
+      const yesterday = new Date(todayYear, todayMonth, todayDate - 1);
+      const yesterdayYear = yesterday.getFullYear();
+      const yesterdayMonth = yesterday.getMonth();
+      const yesterdayDate = yesterday.getDate();
+
+      const yesterdayItem =
+        items.find((item) => {
+          try {
+            const d = new Date(item.date);
+            return (
+              d.getFullYear() === yesterdayYear &&
+              d.getMonth() === yesterdayMonth &&
+              d.getDate() === yesterdayDate
+            );
+          } catch {
+            const yStr = `${yesterdayYear}-${String(yesterdayMonth + 1).padStart(2, "0")}-${String(
+              yesterdayDate
+            ).padStart(2, "0")}`;
+            return String(item.date).slice(0, 10) === yStr;
+          }
+        }) ?? null;
+
+      function isOvernightShift(shift: any) {
+        if (!shift?.startTime || !shift?.endTime) return false;
+        return String(shift.endTime) <= String(shift.startTime);
+      }
+
+      const hasYesterdayOpenOvernight =
+        yesterdayItem &&
+        !yesterdayItem.shift?.isDayOff &&
+        isOvernightShift(yesterdayItem.shift) &&
+        yesterdayItem.attendance &&
+        yesterdayItem.attendance.timeIn &&
+        !yesterdayItem.attendance.timeOut;
+
       let info: TodayInfo;
-      if (!todayItem) {
+      if (!todayItem && hasYesterdayOpenOvernight) {
+        // Tidak ada jadwal hari ini, tapi ada shift kemarin yang overnight dan belum clock-out.
+        // Anggap status saat ini masih CLOCKED_IN_ONLY untuk shift kemarin.
+        const shift = yesterdayItem!.shift;
+        info = {
+          dateLabel: todayStr,
+          shiftName: shift?.name ?? "",
+          shiftTime: shift
+            ? `${shift.startTime ?? ""} - ${shift.endTime ?? ""}`
+            : "",
+          isDayOff: false,
+          status: "CLOCKED_IN_ONLY",
+        };
+      } else if (!todayItem) {
         info = {
           dateLabel: todayStr,
           shiftName: "",
@@ -97,6 +146,23 @@ export default function MobileHomePage() {
         if (shift?.isDayOff) {
           status = "DAY_OFF";
         } else if (!attendance || (!attendance.timeIn && !attendance.timeOut)) {
+          // Jika belum ada absen di jadwal hari ini tapi ada shift overnight kemarin yang masih terbuka,
+          // prioritaskan menutup shift kemarin terlebih dahulu.
+          if (hasYesterdayOpenOvernight) {
+            const yShift = yesterdayItem!.shift;
+            info = {
+              dateLabel: todayStr,
+              shiftName: yShift?.name ?? "",
+              shiftTime: yShift
+                ? `${yShift.startTime ?? ""} - ${yShift.endTime ?? ""}`
+                : "",
+              isDayOff: false,
+              status: "CLOCKED_IN_ONLY",
+            };
+            setTodayInfo(info);
+            setLoading(false);
+            return;
+          }
           status = "NOT_CLOCKED_IN";
         } else if (attendance.timeIn && !attendance.timeOut) {
           status = "CLOCKED_IN_ONLY";
